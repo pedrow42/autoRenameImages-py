@@ -1,102 +1,150 @@
 import os
 import time
-import PySimpleGUI as sg
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+import PySimpleGUI as sg
 
 
 class RenameHandler(FileSystemEventHandler):
-
     def __init__(self, new_name, image_dir):
         self.new_name = new_name
         self.image_dir = image_dir
 
     def on_created(self, event):
         images = os.listdir(self.image_dir)
-
-        images.sort(key=lambda x: os.stat(os.path.join(self.image_dir, x)).st_ctime)
-        last_img_name, last_img_extension = os.path.splitext(images[-1])
+        images.sort(key=lambda x: os.stat(
+                    os.path.join(self.image_dir, x)).st_ctime)
 
         def take_last_img(item):
-            img_name, img_extension = os.path.splitext(item)
-            new_image = item.replace(img_extension, "")
-            
-            pos = new_image.rfind('-')
-            part1 = ''
-            part2 = ''
-            if pos != -1:
-                part1, part2 = new_image[:pos], new_image[pos+1:]
-                part1 = part1.strip()
-                part2 = part2.strip()
-            
-            new_name = f'{part1}-{str(int(part2) + 1).zfill(2)}{last_img_extension}'
-            os.rename(os.path.join(self.image_dir, images[-1]), os.path.join(self.image_dir, new_name))
-        
-        if self.new_name:
-            n=0
-            for i, image in enumerate(images):
-                img_name, img_extension = os.path.splitext(image)
-                new_name = f'{self.new_name}-{str(i + 1).zfill(2)}{img_extension}'
-                n+=1
-                os.rename(os.path.join(self.image_dir, image), os.path.join(self.image_dir, new_name))
-            event_handler = RenameHandler(self.new_name, self.image_dir)
-            observer = Observer()
-            observer.schedule(event_handler, self.image_dir, recursive=True)
-            observer.start()
+            last_dash = item.rfind('-')
+            current_name = item[:last_dash]
+            image_count = item[last_dash+1:].split('.')[0]
+            if image_count.isdigit():
+                image_count = int(image_count)+1
+            else:
+                return
+
+            last_img_extension = images[-1].split('.')[-1]
+            new_name = f'{current_name}-{str(image_count).zfill(2)}.{last_img_extension}'
+
+            while True:
+                try:
+                    os.rename(os.path.join(
+                        self.image_dir, images[-1]), os.path.join(self.image_dir, new_name))
+                    break
+                except:
+                    break
+
+        if len(images) >= 2:
+            if self.new_name:
+                time.sleep(.5)
+                for i in range(len(images)):
+                    img_extension = images[i].split('.')[-1]
+                    new_name = f'{self.new_name}-{str(i + 1).zfill(2)}.{img_extension}'
+                    while True:
+                        try:
+                            os.rename(os.path.join(self.image_dir, images[i]),
+                                      os.path.join(self.image_dir, new_name))
+                            break
+                        except:
+                            break
+
+            else:
+                time.sleep(.3)
+                take_last_img(images[-2])
         else:
-            time.sleep(.5)
-            take_last_img(images[-2])
+            return
+
 
 def main():
-    first_layout = [[sg.Text('Quantas pastas você deseja monitorar? (Digite um número): '), sg.Input(key="folders_to_watch")],
-                    [sg.Button('Ok'), sg.Button('Cancel')] ]
-    second_layout = [[sg.Text('Digite o caminho da pasta selecionada: '), sg.Input(key="image_dir")],
-                    [sg.Text('Você deseja que todas as imagens da pasta sejam renomeadas seguindo um mesmo padrão?')],
-                    [sg.Radio('Sim', 'rename', key='rename_yes'), sg.Radio('Não', 'rename', key='rename_no')]]
-    third_layout = [[sg.Text('Digite o padrão de nomes que as imagens devem ter (Exemplo: sco-01-pht): '), sg.Input(key="new_name")]]
+    sg.theme('DarkBlue3')
+    font = ('Helvetica', 12)
 
+    layout = [
+        [sg.Text('Quantas pastas você deseja monitorar?',
+                 font=font, justification='left'),
+         sg.Combo(['1', '2', '3', '4', '5'], key='folders_to_watch', enable_events=True, font=font)]
+    ]
 
-    window = sg.Window('Auto renomear imagens', first_layout)
+    window = sg.Window('Renomeador de Imagens', layout,
+                       element_justification='c', margins=(80, 40))
     while True:
         event, values = window.read()
-        try:
-            folders_to_watch = int(values['folders_to_watch'])
-            if folders_to_watch <= 0:
-                print('Digite um número maior que zero!')
-            else:
-                window.close()
-                break
-        except:
-            print('Digite um número válido!')
+        if event == sg.WIN_CLOSED:
+            break
+        elif event == 'folders_to_watch':
+            new_layout = [
+                [sg.Text('Quantas pastas você deseja monitorar?',
+                 font=font, justification='left'),
+                 sg.Combo(['1', '2', '3', '4', '5'], key='folders_to_watch', default_value=values['folders_to_watch'], enable_events=True, font=font)]
+            ]
+            for i in range(int(values['folders_to_watch'])):
+                new_layout.append(
+                    [
+                        [sg.Text(
+                            f'Digite o caminho da {i+1}ª pasta selecionada: ', justification='left', font=font, pad=((0, 0), (20, 0))), sg.Input(key=f'image_dir{i}', pad=((0, 0), (20, 0)), font=font, size=(40, 1))],
+                        [sg.Text('Aplicar único padrão de nomenclatura para todas as imagens na pasta?', font=font, justification='left'),
+                         sg.Radio('Sim', f'rename{i}', key=f'sim-{i}', enable_events=True, font=font), sg.Radio('Não', f'rename{i}', key=f'nao-{i}', default=True, enable_events=True, font=font)],
+                        [sg.Text('Digite o padrão de nomenclatura das imagens: ', font=font, key=f'label_default{i}', justification='left',
+                                 visible=False), sg.Input(key=f'default_name{i}', visible=False)]
+                    ]
+                )
+            new_layout.append([
+                [sg.Button('Iniciar', font=('Helvetica', 14),
+                           button_color=('black', 'yellow'), size=(16, 2), pad=((0, 0), (20, 0)))]
+            ])
 
-    c = 0
-    while c < int(folders_to_watch):
-        window = sg.Window('Auto Renomear Imagens', second_layout)
-        event, values = window.read()
+            new_window = sg.Window(
+                'Renomeador de Imagens', new_layout, margins=(80, 40))
+            window.close()
+            window = new_window
 
-        image_dir = values['image_dir']
-        if values['rename_yes']:
-            window = sg.Window('Auto Renomear Imagens', third_layout)
-            new_name = values['new_name']
-            event, values = window.read()
-            event_handler = RenameHandler(new_name, image_dir)
-            event_handler.on_created(None)
-        else:
-            event_handler = RenameHandler(new_name, image_dir)
-            observer = Observer()
-            observer.schedule(event_handler, image_dir, recursive=True)
-            observer.start()
-        c+=1
-    window.close()
+        if event.startswith('sim'):
+            selected_radio = event.split("-")[1]
+            window[f'label_default{selected_radio}'].update(visible=True)
+            window[f'default_name{selected_radio}'].update(visible=True)
+        elif event.startswith('nao'):
+            selected_radio = event.split("-")[1]
+            window[f'label_default{selected_radio}'].update(visible=False)
+            window[f'default_name{selected_radio}'].update(visible=False)
 
-    while True:
-        reload = input('Digite "r" para reiniciar o programa ou "e" para encerrá-lo: ')
-        if reload.lower() == 'r':
-            new_name = ''
+        if event == 'Iniciar':
+            for i in range(int(values['folders_to_watch'])):
+                folder_path = values[f'image_dir{i}']
+                default_name = values[f'default_name{i}']
+
+                if folder_path:
+                    event_handler = RenameHandler(default_name, folder_path)
+                    observer = Observer()
+                    observer.schedule(
+                        event_handler, folder_path, recursive=True)
+                    observer.start()
+                    if default_name:
+                        event_handler.on_created(None)
+
+            running_layout = [
+                [sg.Text('Aplicativo em execução...',
+                         font=('Helvetica', 18), pad=((0, 0), (20, 20)))],
+                [sg.Text('Clique no botão abaixo para reiniciar ou no "x" para encerrar.', font=font, pad=(
+                    (0, 0), (20, 20)))],
+                [[sg.Button('Reiniciar', size=(16, 2), font=(
+                    'Helvetica', 14))]]
+            ]
+            running_window = sg.Window(
+                'Renomeador de Imagens', running_layout, margins=(80, 40), element_justification='c')
+            window.close()
+            window = running_window
+
+        if event == 'Reiniciar':
             observer.stop()
-            main()
-        else:
-            exit()
+            layout = [
+                [sg.Text('Quantas pastas você deseja monitorar?',
+                         font=font, justification='left'),
+                 sg.Combo(['1', '2', '3', '4', '5'], key='folders_to_watch', enable_events=True, font=font)]
+            ]
+            window.close()
+            window = sg.Window('Renomeador de Imagens',
+                               layout, margins=(80, 40))
 
 
 if __name__ == '__main__':
